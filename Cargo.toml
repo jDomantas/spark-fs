@@ -1,0 +1,6 @@
+[package]
+name = "spark-fs"
+version = "0.1.0"
+authors = ["djade <djadenkus@gmail.com>"]
+
+[dependencies]
