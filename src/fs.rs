@@ -8,6 +8,7 @@ const FILE_RAW_SIZE: u64 = 10 + ::path::MAX_PATH_LENGTH as u64 + MAX_FILE_SIZE;
 const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
 const MAX_DESCRIPTORS: usize = 16;
 
+#[derive(Debug, Copy, Clone)]
 pub struct Fd {
     index: usize,
 }
