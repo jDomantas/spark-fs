@@ -97,11 +97,15 @@ impl<'a> FileSystem<'a> {
     fn read_header(&mut self, index: u64) -> io::Result<FileHeader> {
         let mut buf = [0; 10 + path::MAX_PATH_LENGTH];
         self.storage.read_exact(&mut buf)?;
+        // let name = Path::from_ascii_str(&buf[10..]);
+        // if name.is_none() {
+        //     panic!("bad path: {:?}", &buf[10..]);
+        // }
         Ok(FileHeader {
             exists: buf[0] != 0,
             locks: buf[1],
             len: to_u64(&buf[2..10]),
-            name: Path::from_ascii_str(&buf[10..]).expect("stored bad path"),
+            name: Path::from_ascii_zero_padded(&buf[10..]).expect("stored bad path"),
             data: file_position(index) + 10 + path::MAX_PATH_LENGTH as u64,
         })
     }
@@ -225,25 +229,27 @@ impl<'a> FileSystem<'a> {
         Ok(())
     }
 
-    pub fn get_writer<'b>(&'b mut self, fd: Fd) -> impl io::Write + 'b {
+    pub fn get_writer<'b>(&'b mut self, fd: &Fd) -> io::Result<impl io::Write + 'b> {
         let desc = &mut self.descriptors[fd.index];
         debug_assert!(desc.writing && desc.used, "invalid descriptor");
-        FsWriter {
+        self.storage.seek(SeekFrom::Start(file_position(desc.index as u64) + desc.pos))?;
+        Ok(FsWriter {
             pos: &mut desc.pos,
             len: &mut self.headers[desc.index].len,
             max_len: MAX_FILE_SIZE,
             writer: self.storage,
-        }
+        })
     }
 
-    pub fn get_reader<'b>(&'b mut self, fd: Fd) -> impl io::Read + 'b {
+    pub fn get_reader<'b>(&'b mut self, fd: &Fd) -> io::Result<impl io::Read + 'b> {
         let desc = &mut self.descriptors[fd.index];
         debug_assert!(!desc.writing && desc.used, "invalid descriptor");
-        FsReader {
+        self.storage.seek(SeekFrom::Start(file_position(desc.index as u64) + desc.pos))?;
+        Ok(FsReader {
             pos: &mut desc.pos,
             len: self.headers[desc.index].len,
             reader: self.storage,
-        }
+        })
     }
 }
 
@@ -307,5 +313,61 @@ pub fn format_storage<T: ReadWriteSeek>(storage: &mut T, len: u64) -> io::Result
             len, FS_SIZE,
         );
     }
+    for file in 0..MAX_FILES {
+        storage.seek(SeekFrom::Start(file_position(file as u64)))?;
+        // just clear `exists` flag, leave everything else as-is
+        storage.write_all(&[0])?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::prelude::v1::*;
+    use io::*;
+    use super::*;
+
+    #[test]
+    fn smoke() {
+        let mut storage = empty_backing_storage();
+        let _fs = FileSystem::new(&mut storage).expect("failed to create fs");
+    }
+
+    #[test]
+    fn create() {
+        let mut storage = empty_backing_storage();
+        let mut fs = FileSystem::new(&mut storage).expect("failed to create fs");
+        let path = Path::from_ascii_str(b"foo.txt").unwrap();
+        fs.create(path).expect("failed to create");
+    }
+
+    #[test]
+    fn write_and_read() {
+        let mut storage = empty_backing_storage();
+        let mut fs = FileSystem::new(&mut storage).expect("failed to create fs");
+        let path = Path::from_ascii_str(b"foo.txt").unwrap();
+        {
+            let fd = {
+                let fd = fs.create(path).expect("failed to create");
+                let mut writer = fs.get_writer(&fd).expect("failed to get writer");
+                writer.write_all(&[1, 2, 3, 4]).expect("failed to write");
+                fd
+            };
+            fs.close(fd).expect("failed to close");
+        }
+        let fd = fs.open_read(path).expect("failed to open");
+        let mut reader = fs.get_reader(&fd).expect("failed to get reader");
+        let mut buf = [0; 5];
+        let bytes = reader.read(&mut buf).expect("failed to read");
+        assert_eq!(bytes, 4, "should have read 4 bytes");
+        assert_eq!(buf, [1, 2, 3, 4, 0], "should have read written bytes");
+    }
+
+    fn empty_backing_storage() -> impl ReadWriteSeek {
+        let mut data = Vec::with_capacity(FS_SIZE as usize);
+        for _ in 0..FS_SIZE {
+            data.push(0);
+        }
+        io::Cursor::new(data)
+    }
 }

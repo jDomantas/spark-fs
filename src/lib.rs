@@ -1,10 +1,12 @@
 #![no_std]
 #![feature(nll)]
-#![allow(unused)]
+
+#[cfg(test)]
+extern crate std;
 
 mod fs;
 pub mod io;
 mod path;
 
-pub use fs::{Fd, FileSystem};
+pub use fs::{Fd, FileSystem, format_storage};
 pub use path::Path;

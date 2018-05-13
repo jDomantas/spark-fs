@@ -85,10 +85,13 @@ where
     }
 }
 
-impl<'a> Write for Cursor<&'a mut [u8]> {
+impl<T> Write for Cursor<T>
+where
+    T: AsMut<[u8]>
+{
     #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        slice_write(&mut self.pos, self.inner, buf)
+        slice_write(&mut self.pos, self.inner.as_mut(), buf)
     }
 
     fn flush(&mut self) -> Result<()> {

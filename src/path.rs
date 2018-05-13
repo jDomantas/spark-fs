@@ -18,6 +18,14 @@ impl Path {
         }
     }
 
+    pub(crate) fn from_ascii_zero_padded(path: &[u8]) -> Option<Self> {
+        if let Some(first_zero) = path.iter().position(|c| *c == 0) {
+            Self::from_ascii_str(&path[..first_zero])
+        } else {
+            Self::from_ascii_str(path)
+        }
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         for i in 0..MAX_PATH_LENGTH {
             if self.buf[i] == 0 {
