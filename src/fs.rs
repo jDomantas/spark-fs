@@ -74,14 +74,14 @@ const NON_EXISTING_FILE: FileHeader = FileHeader {
     data: 0,
 };
 
-pub struct FileSystem<'a> {
-    storage: &'a mut ReadWriteSeek,
+pub struct FileSystem<'a, T: 'a> {
+    storage: &'a mut T,
     headers: [FileHeader; MAX_FILES as usize],
     descriptors: [OpenFile; MAX_DESCRIPTORS],
 }
 
-impl<'a> FileSystem<'a> {
-    pub fn new(storage: &'a mut ReadWriteSeek) -> io::Result<Self> {
+impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
+    pub fn new(storage: &'a mut T) -> io::Result<Self> {
         let mut fs = FileSystem {
             storage,
             headers: [NON_EXISTING_FILE; MAX_FILES],
@@ -260,16 +260,20 @@ impl<'a> FileSystem<'a> {
             headers: &self.headers,
         }
     }
+
+    pub fn inner_mut(&mut self) -> &mut T {
+        self.storage
+    }
 }
 
-struct FsWriter<'a> {
+struct FsWriter<'a, T: 'a> {
     pos: &'a mut u64,
     len: &'a mut u64,
     max_len: u64,
-    writer: &'a mut ReadWriteSeek,
+    writer: &'a mut T,
 }
 
-impl<'a> io::Write for FsWriter<'a> {
+impl<'a, T: ReadWriteSeek + 'a> io::Write for FsWriter<'a, T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let remaining_space = self.max_len - *self.len;
         let max_write = ::core::cmp::min(buf.len(), remaining_space as usize);
@@ -284,13 +288,13 @@ impl<'a> io::Write for FsWriter<'a> {
     }
 }
 
-struct FsReader<'a> {
+struct FsReader<'a, T: 'a> {
     pos: &'a mut u64,
     len: u64,
-    reader: &'a mut ReadWriteSeek,
+    reader: &'a mut T,
 }
 
-impl<'a> io::Read for FsReader<'a> {
+impl<'a, T: ReadWriteSeek + 'a> io::Read for FsReader<'a, T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let remaining_data = self.len - *self.pos;
         let max_read = ::core::cmp::min(buf.len(), remaining_data as usize);
