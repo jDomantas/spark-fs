@@ -87,7 +87,7 @@ where
 
 impl<T> Write for Cursor<T>
 where
-    T: AsMut<[u8]>
+    T: AsMut<[u8]>,
 {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize> {

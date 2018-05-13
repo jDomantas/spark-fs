@@ -183,6 +183,7 @@ impl<'a> FileSystem<'a> {
         }
         if let Some((index, existing)) = self.find_empty_slot() {
             existing.lock_write();
+            existing.exists = true;
             existing.name = path;
             self.descriptors[desc] = OpenFile {
                 used: true,
@@ -232,7 +233,8 @@ impl<'a> FileSystem<'a> {
     pub fn get_writer<'b>(&'b mut self, fd: &Fd) -> io::Result<impl io::Write + 'b> {
         let desc = &mut self.descriptors[fd.index];
         debug_assert!(desc.writing && desc.used, "invalid descriptor");
-        self.storage.seek(SeekFrom::Start(file_position(desc.index as u64) + desc.pos))?;
+        self.storage
+            .seek(SeekFrom::Start(file_position(desc.index as u64) + desc.pos))?;
         Ok(FsWriter {
             pos: &mut desc.pos,
             len: &mut self.headers[desc.index].len,
@@ -244,12 +246,19 @@ impl<'a> FileSystem<'a> {
     pub fn get_reader<'b>(&'b mut self, fd: &Fd) -> io::Result<impl io::Read + 'b> {
         let desc = &mut self.descriptors[fd.index];
         debug_assert!(!desc.writing && desc.used, "invalid descriptor");
-        self.storage.seek(SeekFrom::Start(file_position(desc.index as u64) + desc.pos))?;
+        self.storage
+            .seek(SeekFrom::Start(file_position(desc.index as u64) + desc.pos))?;
         Ok(FsReader {
             pos: &mut desc.pos,
             len: self.headers[desc.index].len,
             reader: self.storage,
         })
+    }
+
+    pub fn list_files<'b>(&'b mut self) -> impl Iterator<Item = Path> + 'b {
+        FileIterator {
+            headers: &self.headers,
+        }
     }
 }
 
@@ -291,6 +300,24 @@ impl<'a> io::Read for FsReader<'a> {
     }
 }
 
+struct FileIterator<'a> {
+    headers: &'a [FileHeader],
+}
+
+impl<'a> Iterator for FileIterator<'a> {
+    type Item = Path;
+
+    fn next(&mut self) -> Option<Path> {
+        while let Some(header) = self.headers.get(0) {
+            self.headers = &self.headers[1..];
+            if header.exists {
+                return Some(header.name);
+            }
+        }
+        None
+    }
+}
+
 fn to_u64(buf: &[u8]) -> u64 {
     assert_eq!(buf.len(), 8);
     let mut result = 0;
@@ -323,9 +350,9 @@ pub fn format_storage<T: ReadWriteSeek>(storage: &mut T, len: u64) -> io::Result
 
 #[cfg(test)]
 mod tests {
-    use std::prelude::v1::*;
-    use io::*;
     use super::*;
+    use io::*;
+    use std::prelude::v1::*;
 
     #[test]
     fn smoke() {
@@ -361,6 +388,20 @@ mod tests {
         let bytes = reader.read(&mut buf).expect("failed to read");
         assert_eq!(bytes, 4, "should have read 4 bytes");
         assert_eq!(buf, [1, 2, 3, 4, 0], "should have read written bytes");
+    }
+
+    #[test]
+    fn list_files() {
+        let mut storage = empty_backing_storage();
+        let mut fs = FileSystem::new(&mut storage).expect("failed to create fs");
+        let path1 = Path::from_ascii_str(b"foo.txt").unwrap();
+        fs.create(path1).expect("failed to create file");
+        let path2 = Path::from_ascii_str(b"bar.txt").unwrap();
+        fs.create(path2).expect("failed to create file");
+        let files = fs.list_files().collect::<Vec<_>>();
+        assert_eq!(files.len(), 2, "should be 2 files");
+        assert!(files.iter().any(|p| *p == path1));
+        assert!(files.iter().any(|p| *p == path2));
     }
 
     fn empty_backing_storage() -> impl ReadWriteSeek {
