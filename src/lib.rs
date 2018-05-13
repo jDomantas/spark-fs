@@ -1,11 +1,10 @@
 #![no_std]
 #![feature(nll)]
-
 #![allow(unused)]
 
-pub mod io;
 mod fs;
+pub mod io;
 mod path;
 
-pub use path::Path;
 pub use fs::{Fd, FileSystem};
+pub use path::Path;

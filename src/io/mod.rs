@@ -1,7 +1,7 @@
 mod cursor;
 
-use core::fmt;
 pub use self::cursor::Cursor;
+use core::fmt;
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum ErrorKind {

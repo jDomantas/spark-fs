@@ -304,8 +304,7 @@ pub fn format_storage<T: ReadWriteSeek>(storage: &mut T, len: u64) -> io::Result
     if len < FS_SIZE {
         panic!(
             "backing storage too small: is {}, should be at least {}",
-            len,
-            FS_SIZE,
+            len, FS_SIZE,
         );
     }
     Ok(())
