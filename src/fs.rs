@@ -5,7 +5,7 @@ use path::{self, Path};
 //const MAX_FILES: usize = 16;
 const MAX_FILE_SIZE: u64 = 1024 * 1024;
 const FILE_RAW_SIZE: u64 = 10 + ::path::MAX_PATH_LENGTH as u64 + MAX_FILE_SIZE;
-const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
+//const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
 //const MAX_DESCRIPTORS: usize = 16;
 
 #[derive(Debug, Copy, Clone)]
@@ -22,6 +22,11 @@ struct OpenFile {
     writing: bool,
 }
 */
+
+#[derive(Debug, Copy, Clone)]
+struct MemoryPlace {
+	pos: u64
+}
 
 /*
 const UNUSED_FD: OpenFile = OpenFile {
@@ -92,10 +97,10 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
             //headers: [NON_EXISTING_FILE; MAX_FILES],
             //descriptors: [UNUSED_FD; MAX_DESCRIPTORS],
         };
-        for i in 0..MAX_FILES {
+        /*for i in 0..MAX_FILES {
             let header = fs.read_header(i as u64)?;
             fs.headers[i] = header;
-        }
+        }*/
         Ok(fs)
     }
 
@@ -130,14 +135,15 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         self.storage.write_all(&buf)
     }
 
-    pub fn flush_to_storage(&mut self) -> io::Result<()> {
+    /*pub fn flush_to_storage(&mut self) -> io::Result<()> {
         for i in 0..MAX_FILES {
             let header = self.headers[i];
             self.write_header(i as u64, header)?;
         }
         Ok(())
-    }
+    }*/
 
+	/*
     fn find_file(&mut self, name: Path) -> Option<(usize, &mut FileHeader)> {
         for (index, file) in self.headers.iter_mut().enumerate() {
             if file.name == name {
@@ -146,7 +152,9 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         }
         None
     }
-
+	
+	
+	
     fn find_empty_slot(&mut self) -> Option<(usize, &mut FileHeader)> {
         for (index, file) in self.headers.iter_mut().enumerate() {
             if !file.exists {
@@ -156,7 +164,9 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         }
         None
     }
-
+	
+	
+	
     fn alloc_descriptor(&mut self) -> Option<usize> {
         for (index, desc) in self.descriptors.iter().enumerate() {
             if !desc.used {
@@ -165,22 +175,24 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         }
         None
     }
+	*/
+	
 
     pub fn create(&mut self, path: Path) -> io::Result<Fd> {
-        let desc = match self.alloc_descriptor() {
-            Some(index) => index,
-            None => return Err(io::Error::new(io::ErrorKind::Other, "cannot create")),
-        };
         if let Some((index, existing)) = self.find_file(path) {
             if existing.can_write() {
                 existing.lock_write();
                 existing.len = 0;
+				
+				/*
                 self.descriptors[desc] = OpenFile {
                     used: true,
                     index,
                     pos: 0,
                     writing: true,
                 };
+				*/
+				
                 return Ok(Fd { index: desc });
             } else {
                 return Err(io::Error::new(io::ErrorKind::Other, "cannot create"));
@@ -190,12 +202,17 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
             existing.lock_write();
             existing.exists = true;
             existing.name = path;
+			
+			
+			/*
             self.descriptors[desc] = OpenFile {
                 used: true,
                 index,
                 pos: 0,
                 writing: true,
             };
+			*/
+			
             return Ok(Fd { index: desc });
         }
         Err(io::Error::new(io::ErrorKind::Other, "cannot create"))
@@ -209,12 +226,16 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         if let Some((index, existing)) = self.find_file(path) {
             if existing.can_read() {
                 existing.lock_read();
+				
+				/*
                 self.descriptors[desc] = OpenFile {
                     used: true,
                     index,
                     pos: 0,
                     writing: false,
                 };
+				*/
+				
                 return Ok(Fd { index: desc });
             } else {
                 return Err(io::Error::new(io::ErrorKind::Other, "cannot open"));
@@ -343,17 +364,24 @@ fn file_position(index: u64) -> u64 {
 }
 
 pub fn format_storage<T: ReadWriteSeek>(storage: &mut T, len: u64) -> io::Result<()> {
-    if len < FS_SIZE {
+    
+	/*
+	if len < FS_SIZE {
         panic!(
             "backing storage too small: is {}, should be at least {}",
             len, FS_SIZE,
         );
     }
+	*/
+	
+	/*
     for file in 0..MAX_FILES {
         storage.seek(SeekFrom::Start(file_position(file as u64)))?;
         // just clear `exists` flag, leave everything else as-is
         storage.write_all(&[0])?;
     }
+	*/
+	
     Ok(())
 }
 
