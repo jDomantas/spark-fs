@@ -2,17 +2,18 @@ use core::u8;
 use io::{self, ReadWriteSeek, SeekFrom};
 use path::{self, Path};
 
-const MAX_FILES: usize = 16;
+//const MAX_FILES: usize = 16;
 const MAX_FILE_SIZE: u64 = 1024 * 1024;
 const FILE_RAW_SIZE: u64 = 10 + ::path::MAX_PATH_LENGTH as u64 + MAX_FILE_SIZE;
 const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
-const MAX_DESCRIPTORS: usize = 16;
+//const MAX_DESCRIPTORS: usize = 16;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Fd {
     index: usize,
 }
 
+/*
 #[derive(Debug, Copy, Clone)]
 struct OpenFile {
     used: bool,
@@ -20,13 +21,16 @@ struct OpenFile {
     pos: u64,
     writing: bool,
 }
+*/
 
+/*
 const UNUSED_FD: OpenFile = OpenFile {
     used: false,
     index: 0,
     pos: 0,
     writing: false,
 };
+*/
 
 #[derive(Debug, Copy, Clone)]
 struct FileHeader {
@@ -77,16 +81,16 @@ const NON_EXISTING_FILE: FileHeader = FileHeader {
 
 pub struct FileSystem<'a, T: 'a> {
     storage: &'a mut T,
-    headers: [FileHeader; MAX_FILES as usize],
-    descriptors: [OpenFile; MAX_DESCRIPTORS],
+    //headers: [FileHeader; MAX_FILES as usize],
+    //descriptors: [OpenFile; MAX_DESCRIPTORS],
 }
 
 impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
     pub fn new(storage: &'a mut T) -> io::Result<Self> {
         let mut fs = FileSystem {
             storage,
-            headers: [NON_EXISTING_FILE; MAX_FILES],
-            descriptors: [UNUSED_FD; MAX_DESCRIPTORS],
+            //headers: [NON_EXISTING_FILE; MAX_FILES],
+            //descriptors: [UNUSED_FD; MAX_DESCRIPTORS],
         };
         for i in 0..MAX_FILES {
             let header = fs.read_header(i as u64)?;
