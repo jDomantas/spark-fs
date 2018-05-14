@@ -2,6 +2,7 @@
 #![feature(nll)]
 
 #[cfg(test)]
+#[macro_use]
 extern crate std;
 
 mod fs;

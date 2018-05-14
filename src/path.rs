@@ -1,3 +1,5 @@
+use core::fmt;
+
 pub const MAX_PATH_LENGTH: usize = 20;
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
@@ -39,3 +41,65 @@ impl Path {
 pub const EMPTY: Path = Path {
     buf: [0; MAX_PATH_LENGTH],
 };
+
+impl fmt::Display for Path {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Path").field(&FmtPathData { path: &self.buf }).finish()
+    }
+}
+
+struct FmtPathData<'a> {
+    path: &'a [u8],
+}
+
+impl<'a> fmt::Debug for FmtPathData<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for &ch in self.path {
+            if ch == 0 {
+                break;
+            }
+            if ch < 0x20 || ch >= 127 || ch == b'\\' {
+                write!(f, "\\x{:>02x}", ch)?;
+            } else {
+                write!(f, "{}", ch as char)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_empty() {
+        let path = Path::from_ascii_str(b"").unwrap();
+        assert_eq!(format!("{}", path), "Path()");
+    }
+    
+    #[test]
+    fn format_simple() {
+        let path = Path::from_ascii_str(b"abcdef").unwrap();
+        assert_eq!(format!("{}", path), "Path(abcdef)");
+    }
+    
+    #[test]
+    fn format_escapes() {
+        let path = Path::from_ascii_str(b"\x0f\\ foo").unwrap();
+        assert_eq!(format!("{}", path), "Path(\\x0f\\x5c foo)");
+    }
+
+    #[test]
+    fn construct_long() {
+        let data = b"123456789012345678901234567890";
+        assert!(data.len() > MAX_PATH_LENGTH, "should test with long path");
+        assert!(Path::from_ascii_str(data).is_none());
+    }
+    
+    #[test]
+    fn construct_inner_zeros() {
+        let data = b"123\0123";
+        assert!(Path::from_ascii_str(data).is_none());
+    }
+}
