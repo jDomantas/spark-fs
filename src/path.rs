@@ -1,6 +1,6 @@
 use core::fmt;
 
-pub const MAX_PATH_LENGTH: usize = 20;
+pub const MAX_PATH_LENGTH: usize = 255;
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub struct Path {

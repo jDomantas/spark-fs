@@ -8,116 +8,110 @@ const FILE_RAW_SIZE: u64 = 10 + ::path::MAX_PATH_LENGTH as u64 + MAX_FILE_SIZE;
 //const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
 //const MAX_DESCRIPTORS: usize = 16;
 
-#[derive(Debug, Copy, Clone)]
-pub struct Fd {
-    index: usize,
+const FD_MAGIC_NUMBER: u8 = 0xC4;
+
+
+#[repr(u8)]
+enum FileType {
+	folder,
+	exec,
+	default,
+	error,
 }
 
-/*
-#[derive(Debug, Copy, Clone)]
-struct OpenFile {
-    used: bool,
-    index: usize,
-    pos: u64,
-    writing: bool,
+#[repr(u8)]
+emun FileFlag {
+	special,
+	readonly,
+	readwrite,
+	error,
 }
-*/
-
-#[derive(Debug, Copy, Clone)]
-struct MemoryPlace {
-	pos: u64
-}
-
-/*
-const UNUSED_FD: OpenFile = OpenFile {
-    used: false,
-    index: 0,
-    pos: 0,
-    writing: false,
-};
-*/
-
-#[derive(Debug, Copy, Clone)]
-struct FileHeader {
-    exists: bool,
-    locks: u8,
-    len: u64,
-    name: Path,
-    data: u64,
-}
-
-impl FileHeader {
-    fn can_write(&self) -> bool {
-        self.locks == 0
-    }
-
-    fn can_read(&self) -> bool {
-        self.locks < u8::MAX
-    }
-
-    fn lock_write(&mut self) {
-        debug_assert!(self.can_write(), "cannot lock for write");
-        self.locks = u8::MAX;
-    }
-
-    fn lock_read(&mut self) {
-        debug_assert!(self.can_read(), "cannot lock for read");
-        self.locks += 1;
-    }
-
-    fn unlock_write(&mut self) {
-        debug_assert!(self.locks == u8::MAX, "cannot unlock write");
-        self.locks = 0;
-    }
-
-    fn unlock_read(&mut self) {
-        debug_assert!(self.locks > 0, "cannot unlock read");
-        self.locks -= 1;
-    }
-}
-
-const NON_EXISTING_FILE: FileHeader = FileHeader {
-    exists: false,
-    locks: 0,
-    len: 0,
-    name: path::EMPTY,
-    data: 0,
-};
 
 pub struct FileSystem<'a, T: 'a> {
-    storage: &'a mut T,
-    //headers: [FileHeader; MAX_FILES as usize],
-    //descriptors: [OpenFile; MAX_DESCRIPTORS],
+    storage: &'a mut T
 }
+
+pub struct FileDescriptor {
+	ftype:  FileType,
+	flag: FileFlag,
+	name: Path,
+	activelocks: u8,
+}
+
 
 impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
     pub fn new(storage: &'a mut T) -> io::Result<Self> {
         let mut fs = FileSystem {
-            storage,
-            //headers: [NON_EXISTING_FILE; MAX_FILES],
-            //descriptors: [UNUSED_FD; MAX_DESCRIPTORS],
+            storage
         };
-        /*for i in 0..MAX_FILES {
-            let header = fs.read_header(i as u64)?;
-            fs.headers[i] = header;
-        }*/
+		
+		self.storage.seek(SeekFrom::Start(0))?;
+		create_fd(FileType::folder, FileFlag::special, Path::from_ascii_str(b"root"));
         Ok(fs)
     }
+	
+	fn create_fd(&mut self, ftype: FileType, fflag: FileFlag, name: Path) {
+		
+		self.storage.writeall(&[MAGIC_NUMBER])?;
+		self.storage.writeall(&[ftype as u8])?;
+		self.storage.writeall(&[fflag as u8])?;
+		self.storage.writeall(&[0])?;
+		self.storage.writeall(name.raw_buf())?;
+		
+	}
 
-    fn read_header(&mut self, index: u64) -> io::Result<FileHeader> {
-        let mut buf = [0; 10 + path::MAX_PATH_LENGTH];
-        self.storage.read_exact(&mut buf)?;
-        // let name = Path::from_ascii_str(&buf[10..]);
-        // if name.is_none() {
-        //     panic!("bad path: {:?}", &buf[10..]);
-        // }
-        Ok(FileHeader {
-            exists: buf[0] != 0,
-            locks: buf[1],
-            len: to_u64(&buf[2..10]),
-            name: Path::from_ascii_zero_padded(&buf[10..]).expect("stored bad path"),
-            data: file_position(index) + 10 + path::MAX_PATH_LENGTH as u64,
-        })
+    fn read_header(&mut self) -> FileDescriptor {
+		let magicno = [u8;1];
+		self.storage.read_exact(&magicno);
+		if (magicno[0] != MAGIC_NUMBER) {
+			return Err(io::Error::new(io::ErrorKind::FileNotFound, "File header corrupt"));
+		}
+		
+		
+		let ftype: FileType;
+		
+		self.storage.read_exact(&magicno);
+        if (FileType::folder as u8 == magicno[0]) {
+			ftype = FileType::folder;
+		}
+		else if (FileType::exec as u8 == magicno[0]) {
+			ftype = FileType::exec;
+		}
+		else if (FileType::default as u8 == magicno[0]) {
+			ftype = FileType::default;
+		}
+		else {
+			return Err(io::Error::new(io::ErrorKind::FileNotFound, "File header corrupt"));
+		}
+		
+		let fflag: FileFlag;
+		
+		self.storage.read_exact(&magicno);
+		if (FileFlag::readwrite as u8 == magicno[0]) {
+			fflag = FileFlag::readwrite;
+		}
+		else if (FileFlag::readonly as u8 == magicno[0]) {
+			fflag = FileFlag::readonly;
+		}
+		else if (FileFlag::special as u8 == magicno[0]) {
+			fflag = FileFlag::special;
+		}
+		else {
+			return Err(io::Error::new(io::ErrorKind::FileNotFound, "File header corrupt"));
+		}
+		
+		self.storage.read(&magicno);
+		
+		let fname = [0;Path::MAX_PATH_LENGTH];
+		
+		self.storage.read_exact(&fname);
+		
+		FileDescriptor{
+			ftype,
+			fflag,
+			fname,
+			magicno[0]
+		}
     }
 
     fn write_header(&mut self, index: u64, header: FileHeader) -> io::Result<()> {
