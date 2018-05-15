@@ -200,7 +200,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
     pub fn open_read(&mut self, path: Path) -> io::Result<Fd> {
         let desc = match self.alloc_descriptor() {
             Some(index) => index,
-            None => return Err(io::Error::new(io::ErrorKind::Other, "cannot open")),
+            None => return Err(io::Error::new(io::ErrorKind::Other, "cannot open: fd limit")),
         };
         if let Some((index, existing)) = self.find_file(path) {
             if existing.can_read() {
@@ -213,10 +213,10 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
                 };
                 return Ok(Fd { index: desc });
             } else {
-                return Err(io::Error::new(io::ErrorKind::Other, "cannot open"));
+                return Err(io::Error::new(io::ErrorKind::Other, "cannot open: locked"));
             }
         }
-        Err(io::Error::new(io::ErrorKind::Other, "cannot open"))
+        Err(io::Error::new(io::ErrorKind::Other, "cannot open: no file"))
     }
 
     pub fn close(&mut self, fd: Fd) -> io::Result<()> {
