@@ -9,6 +9,7 @@ pub enum ErrorKind {
     UnexpectedEof,
     WriteZero,
     Other,
+    OutOfSpace,
 }
 
 #[derive(Debug)]

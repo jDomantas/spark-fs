@@ -3,11 +3,13 @@ use io::{self, ReadWriteSeek, SeekFrom};
 use path::{self, Path};
 
 //const MAX_FILES: usize = 16;
-const SECTOR_SIZE: u64 = 1024 * 1024;
+const SECTOR_SIZE: u64 = 4096;
 //const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
 //const MAX_DESCRIPTORS: usize = 16;
 
 const FD_MAGIC_NUMBER: u8 = 0xC4;
+const MAX_SECTORS: usize = 1048576;
+const U32_MAX: u32 = 4294967295;
 
 
 #[repr(u8)]
@@ -27,7 +29,11 @@ enum FileFlag {
 }
 
 pub struct FileSystem<'a, T: 'a> {
-    storage: &'a mut T
+    storage: &'a mut T,
+    sectors: [bool;MAX_SECTORS],
+    capacity: u64,
+    current_sector: u32,
+    current_position: usize
 }
 
 pub struct FileDescriptor {
@@ -51,12 +57,20 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		
 	}
 	
-	pub fn new(&mut self, storage: &'a mut T) -> io::Result<Self> {
+	pub fn new(&mut self, storage: &'a mut T, size: u64) -> io::Result<Self> {
         let mut fs = FileSystem {
-            storage
+            self.storage: storage,
+            sectors: [false;MAX_SECTORS],
+            current_sector: 0,
+            current_position: 0,
+            capacity: size
         };
+        
+        self.sectors[0] = true;
+        
 		
 		self.storage.seek(SeekFrom::Start(0))?;
+		
 		self.create_fd(FileType::folder, FileFlag::special, Path::from_ascii_str(b"root"));
         Ok(fs)
     }
@@ -115,15 +129,75 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 			activelocks: (magicno[0])
 		}
     }
+    
+    fn write_auto(&mut self, buf: &[u8]) {
+        if (len(buf) > SECTOR_SIZE - (self.current_position % SECTOR_SIZE)) {
+            let buf1 = buf[(SECTOR_SIZE - (self.current_position % SECTOR_SIZE))..];
+            self.storage.writeall(&(buf[..(SECTOR_SIZE - (self.current_position % SECTOR_SIZE))]));
+            self.storage.seek(SeekFrom::Start(self.current_sector * SECTOR_SIZE));
+            self.current_position = self.current_sector * SECTOR_SIZE;
+            let new_sector = get_valid_sector();
+            write_shorthead(new_sector);
+            self.current_sector = new_sector;
+            self.current_position = new_sector * SECTOR_SIZE;
+            self.storage.seek(SeekFrom::Start(self.current_position));
+            write_auto(&buf1);
+            return;
+        }
+        self.storage.writeall(buf);
+        self.current_position += len(buf);
+        return;
+    }
+    
+    fn get_valid_sector(&mut self) -> io::Result<u32> {
+        let i: u32 = 0;
+        while(i < MAX_SECTORS && i < (self.capacity / SECTOR_SIZE)) {
+            if (!(sectors[i])) {
+                sectors[i] = true;
+                Ok(i as u32);
+            }
+            i++;
+        }
+        Err(io::Error::new(io::ErrorKind::OutOfSpace, "File system ran out of space"));
+    }
 
     fn write_header(&mut self, index: u64, header: FileDescriptor) -> io::Result<()> {
+        write_shorthead(U32_MAX);
         
         self.storage.writeall(&[FD_MAGIC_NUMBER])?;
 		self.storage.writeall(&[header.filetype as u8])?;
 		self.storage.writeall(&[header.fileflag as u8])?;
 		self.storage.writeall(&[0])?;
 		self.storage.writeall(header.filename.raw_buf())?;
-        
+    }
+    
+    fn write_shorthead(&mut self, x: u32) {
+        let buf: [u8;4] = transform_u32_to_array_of_u8(x);
+        self.current_position += 4;
+        self.storage.writeall(&buf);
+    }
+    
+    fn read_shorthead(&mut self) -> u32 {
+        let buf: [u8;4] = [0;4];
+        self.storage.read_exact(&buf);
+        self.current_position += 4;
+        return (transform_array_of_u8_to_u32(buf));
+    }
+    
+    fn transform_u32_to_array_of_u8(x:u32) -> [u8;4] {
+        let b1 : u8 = ((x >> 24) & 0xff) as u8;
+        let b2 : u8 = ((x >> 16) & 0xff) as u8;
+        let b3 : u8 = ((x >> 8) & 0xff) as u8;
+        let b4 : u8 = (x & 0xff) as u8;
+        return [b1, b2, b3, b4]
+    }
+    
+    fn transform_array_of_u8_to_u32(x:[u8;4]) -> u32 {
+        let y: u32 = (x[0] as u32) << 24;
+        y = y & ((x[1] as u32) << 16);
+        y = y & ((x[2] as u32) << 8);
+        y = y & (x[3] as u32);
+        return y;
     }
 
     /*pub fn flush_to_storage(&mut self) -> io::Result<()> {
@@ -174,10 +248,19 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         let mut i = 0;
         self.storage.seek(SeekFrom::Start(0));
         
+        if (pt[0] != b'/') {
+            return Err(io::Error::new(io::ErrorKind::Other, "cannot create - bad path"))
+        }
         while (i < path.len()) {
             self.storage.seek(SeekFrom::Start(0));
-            /////////////////////////////////////////////////////////////////////////////////////////
+            if (pt[0] != b'/')
         }
+    }
+    
+    fn navigate(&mut self, path: Path) {
+        self.storage.seek(SeekFrom::Start(0));
+        let fd: FileDescriptor = read_header();
+        
     }
 
     pub fn open_read(&mut self, path: Path) -> io::Result<Fd> {
