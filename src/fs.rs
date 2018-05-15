@@ -3,8 +3,7 @@ use io::{self, ReadWriteSeek, SeekFrom};
 use path::{self, Path};
 
 //const MAX_FILES: usize = 16;
-const MAX_FILE_SIZE: u64 = 1024 * 1024;
-const FILE_RAW_SIZE: u64 = 10 + ::path::MAX_PATH_LENGTH as u64 + MAX_FILE_SIZE;
+const SECTOR_SIZE: u64 = 1024 * 1024;
 //const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
 //const MAX_DESCRIPTORS: usize = 16;
 
@@ -20,7 +19,7 @@ enum FileType {
 }
 
 #[repr(u8)]
-emun FileFlag {
+enum FileFlag {
 	special,
 	readonly,
 	readwrite,
@@ -32,38 +31,41 @@ pub struct FileSystem<'a, T: 'a> {
 }
 
 pub struct FileDescriptor {
-	ftype:  FileType,
-	flag: FileFlag,
-	name: Path,
+	filetype:  FileType,
+	fileflag: FileFlag,
+	filename: Path,
 	activelocks: u8,
+	
 }
 
 
 impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
-    pub fn new(storage: &'a mut T) -> io::Result<Self> {
-        let mut fs = FileSystem {
-            storage
-        };
-		
-		self.storage.seek(SeekFrom::Start(0))?;
-		create_fd(FileType::folder, FileFlag::special, Path::from_ascii_str(b"root"));
-        Ok(fs)
-    }
-	
+    
 	fn create_fd(&mut self, ftype: FileType, fflag: FileFlag, name: Path) {
 		
-		self.storage.writeall(&[MAGIC_NUMBER])?;
+		self.storage.writeall(&[FD_MAGIC_NUMBER])?;
 		self.storage.writeall(&[ftype as u8])?;
 		self.storage.writeall(&[fflag as u8])?;
 		self.storage.writeall(&[0])?;
 		self.storage.writeall(name.raw_buf())?;
 		
 	}
+	
+	pub fn new(&mut self, storage: &'a mut T) -> io::Result<Self> {
+        let mut fs = FileSystem {
+            storage
+        };
+		
+		self.storage.seek(SeekFrom::Start(0))?;
+		self.create_fd(FileType::folder, FileFlag::special, Path::from_ascii_str(b"root"));
+        Ok(fs)
+    }
+	
 
     fn read_header(&mut self) -> FileDescriptor {
-		let magicno = [u8;1];
+		let mut magicno: [u8;1];
 		self.storage.read_exact(&magicno);
-		if (magicno[0] != MAGIC_NUMBER) {
+		if (magicno[0] != FD_MAGIC_NUMBER) {
 			return Err(io::Error::new(io::ErrorKind::FileNotFound, "File header corrupt"));
 		}
 		
@@ -107,26 +109,21 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		self.storage.read_exact(&fname);
 		
 		FileDescriptor{
-			ftype,
-			fflag,
-			fname,
-			magicno[0]
+			filetype: ftype,
+			fileflag: fflag,
+			filename : fname,
+			activelocks: (magicno[0])
 		}
     }
 
-    fn write_header(&mut self, index: u64, header: FileHeader) -> io::Result<()> {
-        let mut buf = [0; 11 + path::MAX_PATH_LENGTH];
-        buf[0] = header.exists as u8;
-        buf[1] = header.locks;
-        let mut d = 1;
-        for i in 0..8 {
-            buf[2 + i] = ((header.len / d) & 0xFF) as u8;
-            d = d.wrapping_mul(256);
-        }
-        let path = header.name.as_slice();
-        buf[10..(10 + path.len())].copy_from_slice(path);
-        self.storage.seek(SeekFrom::Start(file_position(index)))?;
-        self.storage.write_all(&buf)
+    fn write_header(&mut self, index: u64, header: FileDescriptor) -> io::Result<()> {
+        
+        self.storage.writeall(&[FD_MAGIC_NUMBER])?;
+		self.storage.writeall(&[header.filetype as u8])?;
+		self.storage.writeall(&[header.fileflag as u8])?;
+		self.storage.writeall(&[0])?;
+		self.storage.writeall(header.filename.raw_buf())?;
+        
     }
 
     /*pub fn flush_to_storage(&mut self) -> io::Result<()> {
@@ -173,43 +170,14 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 	
 
     pub fn create(&mut self, path: Path) -> io::Result<Fd> {
-        if let Some((index, existing)) = self.find_file(path) {
-            if existing.can_write() {
-                existing.lock_write();
-                existing.len = 0;
-				
-				/*
-                self.descriptors[desc] = OpenFile {
-                    used: true,
-                    index,
-                    pos: 0,
-                    writing: true,
-                };
-				*/
-				
-                return Ok(Fd { index: desc });
-            } else {
-                return Err(io::Error::new(io::ErrorKind::Other, "cannot create"));
-            }
+        let pt: Path = path.as_slice();
+        let mut i = 0;
+        self.storage.seek(SeekFrom::Start(0));
+        
+        while (i < path.len()) {
+            self.storage.seek(SeekFrom::Start(0));
+            /////////////////////////////////////////////////////////////////////////////////////////
         }
-        if let Some((index, existing)) = self.find_empty_slot() {
-            existing.lock_write();
-            existing.exists = true;
-            existing.name = path;
-			
-			
-			/*
-            self.descriptors[desc] = OpenFile {
-                used: true,
-                index,
-                pos: 0,
-                writing: true,
-            };
-			*/
-			
-            return Ok(Fd { index: desc });
-        }
-        Err(io::Error::new(io::ErrorKind::Other, "cannot create"))
     }
 
     pub fn open_read(&mut self, path: Path) -> io::Result<Fd> {
