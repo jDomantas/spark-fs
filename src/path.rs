@@ -36,6 +36,10 @@ impl Path {
         }
         &self.buf
     }
+    
+    pub fn raw_buf(&self) -> &[u8] {
+        &self.buf
+    }
 }
 
 pub const EMPTY: Path = Path {

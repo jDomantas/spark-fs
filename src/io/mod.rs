@@ -10,6 +10,7 @@ pub enum ErrorKind {
     WriteZero,
     Other,
     OutOfSpace,
+    FileNotFound,
 }
 
 #[derive(Debug)]
