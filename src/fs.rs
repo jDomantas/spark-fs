@@ -2,10 +2,7 @@ use core::u8;
 use io::{self, ReadWriteSeek, SeekFrom};
 use path::{self, Path};
 
-//const MAX_FILES: usize = 16;
 const SECTOR_SIZE: u32 = 4096;
-//const FS_SIZE: u64 = MAX_FILES as u64 * FILE_RAW_SIZE;
-//const MAX_DESCRIPTORS: usize = 16;
 
 const FD_MAGIC_NUMBER: u8 = 0xC4;
 const MAX_SECTORS: u32 = 1048576;
@@ -16,29 +13,29 @@ const MAX_OPEN_FILES: u8 = 128;
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
 enum FileType {
-	folder,
-	exec,
-	default,
-	error,
+	Folder,
+	Exec,
+	Default,
+	Error,
 }
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
 enum FileFlag {
-	special,
-	readonly,
-	readwrite,
-	error,
+	Special,
+	Readonly,
+	ReadWrite,
+	Error,
 }
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum OpenMode {
-    read,
-    readwrite,
-    write,
-    append,
-    error,
+pub enum OpenMode {
+    Read,
+    ReadWrite,
+    Write,
+    Append,
+    Error,
 }
 
 pub struct FileSystem<'a, T: 'a> {
@@ -109,7 +106,7 @@ fn transform_u32_to_array_of_u8(x:u32) -> [u8;4] {
 }
 
 fn transform_array_of_u8_to_u32(x:[u8;4]) -> u32 {
-    let y: u32 = (x[0] as u32) << 24;
+    let mut y: u32 = (x[0] as u32) << 24;
     y = y & ((x[1] as u32) << 16);
     y = y & ((x[2] as u32) << 8);
     y = y & (x[3] as u32);
@@ -129,12 +126,12 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
     }
     
     fn read_shorthead(&mut self) -> u32 {
-        let buf: [u8;4] = [0;4];
+        let mut buf: [u8;4] = [0;4];
         self.storage.read_exact(&mut buf);
         return transform_array_of_u8_to_u32(buf);
     }
     
-	fn write_header(&mut self, hndl: FileHandle) {
+	fn write_header(&mut self, mut hndl: FileHandle) {
 		let fd = hndl.fdesc;
 		self.write_shorthead(U32_MAX);
 		hndl.current_position += 4;
@@ -167,10 +164,10 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
             file_handles: [
                 FileHandle {
                     current_position: 0,
-                    open_mode: OpenMode::error,
+                    open_mode: OpenMode::Error,
                     fdesc: FileDescriptor{
-                        filetype:  FileType::error,
-                        fileflag: FileFlag::error,
+                        filetype:  FileType::Error,
+                        fileflag: FileFlag::Error,
                         end_position: 0,
                         filename: path::EMPTY,
                         active_locks: 0,
@@ -189,11 +186,11 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		
 		let hndl: FileHandle = FileHandle {
             current_position: 0,
-            open_mode: OpenMode::read,
+            open_mode: OpenMode::Read,
             handle_no: 0,
             fdesc: FileDescriptor {
-                filetype: FileType::folder,
-                fileflag: FileFlag::special,
+                filetype: FileType::Folder,
+                fileflag: FileFlag::Special,
                 end_position: 0,
                 filename: Path::from_ascii_str(b"root").expect("failed to construct root path"),
                 active_locks: 1,
@@ -227,7 +224,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 
     fn read_header(&mut self) -> io::Result<FileDescriptor> {
         self.read_shorthead();
-		let mut magicno: [u8;1];
+		let mut magicno: [u8;1] = [0];
 		self.storage.read_exact(&mut magicno);
 		if magicno[0] != FD_MAGIC_NUMBER {
 			return Err(io::Error::new(io::ErrorKind::Other, "File header corrupt"));
@@ -237,14 +234,14 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		let ftype: FileType;
 		
 		self.storage.read_exact(&mut magicno);
-        if FileType::folder as u8 == magicno[0] {
-			ftype = FileType::folder;
+        if FileType::Folder as u8 == magicno[0] {
+			ftype = FileType::Folder;
 		}
-		else if FileType::exec as u8 == magicno[0] {
-			ftype = FileType::exec;
+		else if FileType::Exec as u8 == magicno[0] {
+			ftype = FileType::Exec;
 		}
-		else if FileType::default as u8 == magicno[0] {
-			ftype = FileType::default;
+		else if FileType::Default as u8 == magicno[0] {
+			ftype = FileType::Default;
 		}
 		else {
 			return Err(io::Error::new(io::ErrorKind::FileNotFound, "File header corrupt"));
@@ -253,14 +250,14 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		let fflag: FileFlag;
 		
 		self.storage.read_exact(&mut magicno);
-		if FileFlag::readwrite as u8 == magicno[0] {
-			fflag = FileFlag::readwrite;
+		if FileFlag::ReadWrite as u8 == magicno[0] {
+			fflag = FileFlag::ReadWrite;
 		}
-		else if FileFlag::readonly as u8 == magicno[0] {
-			fflag = FileFlag::readonly;
+		else if FileFlag::Readonly as u8 == magicno[0] {
+			fflag = FileFlag::Readonly;
 		}
-		else if FileFlag::special as u8 == magicno[0] {
-			fflag = FileFlag::special;
+		else if FileFlag::Special as u8 == magicno[0] {
+			fflag = FileFlag::Special;
 		}
 		else {
 			return Err(io::Error::new(io::ErrorKind::Other, "File header corrupt"));
@@ -269,20 +266,17 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		self.storage.read(&mut magicno);
 		
 		
-        let end_pos_buf: [u8;4] = [0;4];
+        let mut end_pos_buf: [u8;4] = [0;4];
         self.storage.read_exact(&mut end_pos_buf);
         
-        let writelock: [u8;1] = [0;1];
+        let mut writelock: [u8;1] = [0;1];
         self.storage.read_exact(&mut writelock);
 		
-		let fname = [0;path::MAX_PATH_LENGTH];
+		let mut fname = [0;path::MAX_PATH_LENGTH];
 		
 		self.storage.read_exact(&mut fname);
 		
-		let wlock: bool = false;
-		if writelock[0] == 1 {
-            wlock = true;
-		}
+		let mut wlock: bool = writelock[0] == 1;
 		let end_pos: u32 = transform_array_of_u8_to_u32(end_pos_buf);
 		let fdesc = FileDescriptor {
 			filetype: ftype,
@@ -307,9 +301,9 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
             return Err(io::Error::new(io::ErrorKind::FileNotFound, "file not found"));
         }
         self.storage.seek(SeekFrom::Start((sect * SECTOR_SIZE as u32) as u64));
-        let descr = self.read_header().expect("failed to read header");
+        let mut descr = self.read_header().expect("failed to read header");
         match mode {
-            OpenMode::read => {
+            OpenMode::Read => {
                 if !(descr.writelock) {
                     descr.active_locks += 1;
                     Ok(self.file_handles[self.create_handle(descr, mode) as usize])
@@ -319,7 +313,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
                 }
             }
             
-            OpenMode::readwrite => {
+            OpenMode::ReadWrite => {
                 if descr.writelock {
                     return Err(io::Error::new(io::ErrorKind::Other, "this file is already open for writing"));
                 }
@@ -331,7 +325,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
                 Ok(self.file_handles[self.create_handle(descr, mode) as usize])
             }
             
-            OpenMode::write => {
+            OpenMode::Write => {
                 if descr.writelock {
                     return Err(io::Error::new(io::ErrorKind::Other, "this file is already open for writing"));
                 }
@@ -342,7 +336,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
                 Ok(self.file_handles[self.create_handle(descr, mode) as usize])
             }
             
-            OpenMode::append => {
+            OpenMode::Append => {
                 if descr.writelock {
                     return Err(io::Error::new(io::ErrorKind::Other, "this file is already open for writing"));
                 }
@@ -353,7 +347,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
                 return Ok(self.file_handles[self.create_handle(descr, mode) as usize]);
             }
             
-            OpenMode::error => {
+            OpenMode::Error => {
                 return Err(io::Error::new(io::ErrorKind::Other, "error open mode"));
             }
         }
@@ -373,7 +367,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         let i:usize = 0;
         while i < MAX_OPEN_FILES as usize {
             if !(self.handle_usage[i]) {
-                if mode == OpenMode::append {
+                if mode == OpenMode::Append {
                     self.file_handles[i].current_position = fdesc.end_position;
                 }
                 else {
@@ -390,8 +384,8 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
     
     fn delete_handle(&mut self, hndl: FileHandle) {
         if self.handle_usage[hndl.handle_no as usize] {
-            self.file_handles[hndl.handle_no as usize].fdesc.filetype = FileType::error;
-            self.file_handles[hndl.handle_no as usize].fdesc.fileflag = FileFlag::error;
+            self.file_handles[hndl.handle_no as usize].fdesc.filetype = FileType::Error;
+            self.file_handles[hndl.handle_no as usize].fdesc.fileflag = FileFlag::Error;
             self.file_handles[hndl.handle_no as usize].fdesc.filename = Path::from_ascii_str(b"").expect("failed to construct null path");
             self.handle_usage[hndl.handle_no as usize] = false;
             return;
@@ -410,7 +404,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         }
     */
     
-    fn write_auto(&mut self, buf: &[u8], hndl: FileHandle) {
+    fn write_auto(&mut self, buf: &[u8], mut hndl: FileHandle) {
         if buf.len() > (SECTOR_SIZE - (hndl.current_position % SECTOR_SIZE)) as usize {
             let curr_sec = hndl.current_position / SECTOR_SIZE;
             let buf1 = &buf[((SECTOR_SIZE - (hndl.current_position % SECTOR_SIZE)) as usize)..];
@@ -430,7 +424,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
     }
     
     fn get_valid_sector(&mut self) -> io::Result<u32> {
-        let i: u32 = 0;
+        let mut i: u32 = 0;
         while i < MAX_SECTORS && i < (self.capacity / SECTOR_SIZE) {
             if !(self.sectors[i as usize]) {
                 self.sectors[i as usize] = true;

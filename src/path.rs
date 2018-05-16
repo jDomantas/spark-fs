@@ -2,7 +2,7 @@ use core::fmt;
 
 pub const MAX_PATH_LENGTH: usize = 255;
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct Path {
     buf: [u8; MAX_PATH_LENGTH],
 }
@@ -41,6 +41,19 @@ impl Path {
         &self.buf
     }
 }
+
+impl PartialEq<Path> for Path {
+    fn eq(&self, other: &Path) -> bool {
+        for i in 0..MAX_PATH_LENGTH {
+            if self.buf[i] != other.buf[i] {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl Eq for Path {}
 
 pub const EMPTY: Path = Path {
     buf: [0; MAX_PATH_LENGTH],

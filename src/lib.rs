@@ -5,7 +5,7 @@
 #[macro_use]
 extern crate std;
 
-mod fs;
+pub mod fs;
 pub mod io;
 mod path;
 
