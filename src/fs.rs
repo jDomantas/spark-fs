@@ -1,4 +1,4 @@
-use core::u8;
+use core::{u8, u32};
 use io::{self, ReadWriteSeek, SeekFrom};
 use path::{self, Path};
 
@@ -6,7 +6,6 @@ const SECTOR_SIZE: u32 = 4096;
 
 const FD_MAGIC_NUMBER: u8 = 0xC4;
 const MAX_SECTORS: u32 = 1048576;
-const U32_MAX: u32 = 4294967295;
 const MAX_OPEN_FILES: u8 = 128;
 
 #[repr(u8)]
@@ -125,7 +124,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 
     fn write_header(&mut self, mut hndl: FileHandle) -> io::Result<()> {
         let fd = hndl.fdesc;
-        self.write_shorthead(U32_MAX)?;
+        self.write_shorthead(u32::MAX)?;
         hndl.current_position += 4;
         self.storage.write_all(&[FD_MAGIC_NUMBER])?;
         self.storage.write_all(&[fd.filetype as u8])?;
