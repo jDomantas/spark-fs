@@ -45,7 +45,7 @@ pub struct FileSystem<'a, T: 'a> {
     handle_usage: [bool; MAX_OPEN_FILES as usize],
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct FileDescriptor {
     filetype: FileType,
     fileflag: FileFlag,
@@ -55,43 +55,12 @@ pub struct FileDescriptor {
     writelock: bool,
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct FileHandle {
     current_position: u32,
     open_mode: OpenMode,
     fdesc: FileDescriptor,
     handle_no: u8,
-}
-
-impl Clone for FileDescriptor {
-    fn clone(&self) -> FileDescriptor {
-        FileDescriptor {
-            filetype: self.filetype,
-            fileflag: self.fileflag,
-            end_position: self.end_position,
-            filename: self.filename,
-            active_locks: self.active_locks,
-            writelock: self.writelock,
-        }
-    }
-}
-
-impl Clone for FileHandle {
-    fn clone(&self) -> FileHandle {
-        FileHandle {
-            current_position: self.current_position,
-            open_mode: self.open_mode,
-            handle_no: self.handle_no,
-            fdesc: FileDescriptor {
-                filetype: self.fdesc.filetype,
-                fileflag: self.fdesc.fileflag,
-                filename: self.fdesc.filename,
-                end_position: self.fdesc.end_position,
-                active_locks: self.fdesc.active_locks,
-                writelock: self.fdesc.writelock,
-            },
-        }
-    }
 }
 
 fn transform_u32_to_array_of_u8(x: u32) -> [u8; 4] {
