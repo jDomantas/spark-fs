@@ -10,6 +10,7 @@ const SECTOR_SIZE: u64 = 4096;
 const FD_MAGIC_NUMBER: u8 = 0xC4;
 const MAX_SECTORS: usize = 1048576;
 const U32_MAX: u32 = 4294967295;
+const MAX_OPEN_FILES: u8 = 128;
 
 
 #[repr(u8)]
@@ -28,20 +29,56 @@ enum FileFlag {
 	error,
 }
 
+#[repr(u8)]
+enum OpenMode {
+    read,
+    readwrite,
+    write,
+    append,
+    overwrite,
+    error,
+}
+
 pub struct FileSystem<'a, T: 'a> {
     storage: &'a mut T,
     sectors: [bool;MAX_SECTORS],
     capacity: u64,
     current_sector: u32,
-    current_position: usize
+    current_position: usize,
+    file_handles: [FileHandle;MAX_OPEN_FILES],
+    handle_usage: [bool;MAX_OPEN_FILES],
 }
 
 pub struct FileDescriptor {
 	filetype:  FileType,
 	fileflag: FileFlag,
 	filename: Path,
-	activelocks: u8,
-	
+	active_locks: u8,
+	writelock: bool,
+}
+
+#[derive(Copy, Clone)]
+pub struct FileHandle {
+    current_position: usize,
+    open_mode: OpenMode,
+    fdesc: FileDescriptor,
+    handle_no: u8
+}
+
+impl Clone for FileHandle {
+    fn clone(&self) -> FileHandle {
+        FileHandle {
+            current_position: self.current_position,
+            open_mode: self.open_mode,
+            fdesc: FileDescriptor {
+                filetype: self.fdesc.filetype;
+                fileflag: self.fdesc.fileflag;
+                filename: self.fdesc.filename;
+                active_locks: self.fdesc.active_locks;
+                writelock: self.fdesc.writelock;
+            }
+        }
+    }
 }
 
 
@@ -61,9 +98,25 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         let mut fs = FileSystem {
             self.storage: storage,
             sectors: [false;MAX_SECTORS],
+            handle_usage: [false;MAX_OPEN_FILES],
             current_sector: 0,
             current_position: 0,
-            capacity: size
+            capacity: size,
+            file_handles: [
+                FileHandle {
+                    current_position: 0,
+                    open_mode: OpenMode::error,
+                    fdesc: FileDescriptor{
+                        filetype:  FileType::error,
+                        fileflag: FileFlag::error,
+                        filename: Path::from_ascii_str(b""),
+                        active_locks: 0,
+                        writelock: false,
+                    },
+                    handle_no: u8
+                };
+                MAX_OPEN_FILES
+            ]
         };
         
         self.sectors[0] = true;
@@ -113,7 +166,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 			fflag = FileFlag::special;
 		}
 		else {
-			return Err(io::Error::new(io::ErrorKind::FileNotFound, "File header corrupt"));
+			return Err(io::Error::new(io::ErrorKind::Other, "File header corrupt"));
 		}
 		
 		self.storage.read(&magicno);
@@ -122,13 +175,104 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
 		
 		self.storage.read_exact(&fname);
 		
-		FileDescriptor{
+		FileDescriptor {
 			filetype: ftype,
 			fileflag: fflag,
 			filename : fname,
-			activelocks: (magicno[0])
+			active_locks: (magicno[0])
 		}
     }
+    
+    pub fn open_file(&mut self, path: Path, mode: OpenMode) -> io::Result<FileHandle> {
+        let sect = navigate(path);
+        if (sect == MAX_SECTORS) {
+            Err(io::Error::new(io::ErrorKind::FileNotFound, "file not found"));
+        }
+        self.storage.seek(SeekFrom::Start(SECTOR_SIZE * sect + 4));
+        let descr = read_header();
+        match (mode) {
+            OpenMode::Read => {
+                if (!(descr.writelock)) {
+                    descr.active_locks++;
+                    Ok(create_handle(descr, mode));
+                }
+                else {
+                    Err(io::Error::new(io::ErrorKind::Other, "this file is already open for writing"));
+                }
+            }
+            
+            OpenMode::ReadWrite => {
+                if (descr.writelock) {
+                    Err(io::Error::new(io::ErrorKind::Other, "this file is already open for writing"));
+                }
+                if (descr.active_locks > 0) {
+                    Err(io::Error::new(io::ErrorKind::Other, "this file is already open for reading"));
+                }
+                descr.active_locks++;
+                descr.writelock = true;
+                Ok(create_handle(descr, mode));
+            }
+            
+            OpenMode::Write => {
+                if (descr.writelock) {
+                    Err(io::Error::new(io::ErrorKind::Other, "this file is already open for writing"));
+                }
+                if (descr.active_locks > 0) {
+                    Err(io::Error::new(io::ErrorKind::Other, "this file is already open for reading"));
+                }
+                descr.writelock = true;
+                Ok(create_handle(descr, mode));
+            }
+            
+            
+        }
+    }
+    
+    /*
+    enum OpenMode {
+        read,
+        readwrite,
+        write,
+        append,
+        overwrite,
+    }
+    */
+    
+    fn create_handle(&mut self, fdesc: FileDescriptor, mode: OpenMode) -> u8 {
+        let i:u8 = 0;
+        while (i < MAX_OPEN_FILES) {
+            if (!(self.handle_usage[i])) {
+                self.handle_usage[i] = true;
+                self.file_handles[i].current_position = 0;
+                self.file_handles[i].open_mode = mode;
+                self.file_handles[i].fdesc = fdesc;
+                return i;
+            }
+            return MAX_OPEN_FILES;
+        }
+    }
+    
+    fn delete_handle(&mut self, hndl: FileHandle) {
+        if (self.handle_usage[i]) {
+            self.file_handles[i].filetype = FileType::error;
+            self.file_handles[i].fileflag = FileFlag::error;
+            self.file_handles[i].filename = Path::from_ascii_str(b"");
+            self.handle_usage[i] = false;
+            return;
+        }
+    }
+    
+    /*
+    FileHandle {
+            current_position: self.current_position,
+            fdesc: FileDescriptor {
+                filetype: self.fdesc.filetype;
+                fileflag: self.fdesc.fileflag;
+                filename: self.fdesc.filename;
+                active_locks: self.fdesc.active_locks;
+            }
+        }
+    */
     
     fn write_auto(&mut self, buf: &[u8]) {
         if (len(buf) > SECTOR_SIZE - (self.current_position % SECTOR_SIZE)) {
@@ -161,7 +305,7 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         Err(io::Error::new(io::ErrorKind::OutOfSpace, "File system ran out of space"));
     }
 
-    fn write_header(&mut self, index: u64, header: FileDescriptor) -> io::Result<()> {
+    fn write_header(&mut self, index: u64, header: FileDescriptor)  {
         write_shorthead(U32_MAX);
         
         self.storage.writeall(&[FD_MAGIC_NUMBER])?;
@@ -198,6 +342,28 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         y = y & ((x[2] as u32) << 8);
         y = y & (x[3] as u32);
         return y;
+    }
+    
+    fn free_children(&mut self, sector: u32) {
+        self.storage.seek(SeekFrom::Start(SECTOR_SIZE * sector));
+        let pointer = read_shorthead();
+        if (pointer == MAX_SECTORS) {
+            return;
+        }
+        free_auto(pointer);
+        return;
+    }
+    
+    fn free_auto(&mut self, sector: u32) {
+        self.storage.seek(SeekFrom::Start(SECTOR_SIZE * sector));
+        let pointer = read_shorthead();
+        if (pointer == MAX_SECTORS) {
+            self.sectors[sector] = false;
+            return;
+        }
+        self.sectors[sector] = false;
+        free_auto(pointer);
+        return;
     }
 
     /*pub fn flush_to_storage(&mut self) -> io::Result<()> {
@@ -257,10 +423,10 @@ impl<'a, T: ReadWriteSeek + 'a> FileSystem<'a, T> {
         }
     }
     
-    fn navigate(&mut self, path: Path) {
+    fn navigate(&mut self, path: Path) -> u32 {
         self.storage.seek(SeekFrom::Start(0));
         let fd: FileDescriptor = read_header();
-        
+        // TODO - implement navigation. Returns sector number, or MAX_SECTORS if not found.
     }
 
     pub fn open_read(&mut self, path: Path) -> io::Result<Fd> {
