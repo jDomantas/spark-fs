@@ -9,5 +9,5 @@ mod fs;
 pub mod io;
 mod path;
 
-pub use fs::{format_storage, FileSystem};
+pub use fs::{FileSystem};
 pub use path::Path;
