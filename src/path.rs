@@ -36,7 +36,7 @@ impl Path {
         }
         &self.buf
     }
-    
+
     pub fn raw_buf(&self) -> &[u8] {
         &self.buf
     }
@@ -61,7 +61,9 @@ pub const EMPTY: Path = Path {
 
 impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Path").field(&FmtPathData { path: &self.buf }).finish()
+        f.debug_tuple("Path")
+            .field(&FmtPathData { path: &self.buf })
+            .finish()
     }
 }
 
@@ -94,13 +96,13 @@ mod tests {
         let path = Path::from_ascii_str(b"").unwrap();
         assert_eq!(format!("{}", path), "Path()");
     }
-    
+
     #[test]
     fn format_simple() {
         let path = Path::from_ascii_str(b"abcdef").unwrap();
         assert_eq!(format!("{}", path), "Path(abcdef)");
     }
-    
+
     #[test]
     fn format_escapes() {
         let path = Path::from_ascii_str(b"\x0f\\ foo").unwrap();
@@ -113,7 +115,7 @@ mod tests {
         assert!(data.len() > MAX_PATH_LENGTH, "should test with long path");
         assert!(Path::from_ascii_str(data).is_none());
     }
-    
+
     #[test]
     fn construct_inner_zeros() {
         let data = b"123\0123";
